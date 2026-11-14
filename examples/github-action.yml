@@ -1,0 +1,28 @@
+name: vibecheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Zero dependencies — no setup-python packages needed beyond base Python
+      - name: Run vibecheck
+        run: |
+          python3 vibecheck.py ./src \
+            --min-score 80 --fail-on high \
+            --baseline .vibecheck-baseline.json \
+            --format sarif > vibecheck.sarif
+          python3 vibecheck.py ./src --format md > vibecheck.md || true
+          cat vibecheck.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: vibecheck.sarif

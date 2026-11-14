@@ -1,0 +1,5 @@
+# Test fixtures contain intentionally vulnerable strings (planted secrets,
+# eval calls, etc). Never scan them in a dogfood run.
+^tests/
+^demo/
+^corpus/
