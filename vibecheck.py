@@ -6,12 +6,13 @@ Zero-dependency Python 3.8+ CLI. Scans a file or directory for common
 security holes, code smells, and "AI slop" patterns, then gives a
 0-100 vibe score with actionable findings.
 
-v0.2: scope-aware matching (code / string / comment), inline
-suppressions, .vibecheckignore, per-line dedup.
+v1.0: AST-hardened rules (aliases, constant propagation, unsafe YAML
+loaders, os.system), .env secret detection, severity-capped scoring,
+cross-platform path handling (Windows-safe ignores).
 
 Usage:
-    python3 vibecheck.py <path> [--format text|json|md] [--min-score N]
-                        [--exclude PATTERN ...] [--fail-on SEVERITY] [--no-color]
+    python3 vibecheck.py <path> [--format text|json|md|sarif] [--min-score N]
+                        [--exclude PATTERN ...] [--fail-on SEVERITY] [--version]
 
 Inline suppression (comment on the line above, or trailing the line):
     # vibecheck: disable=<rule-id,rule-id>   (or bare "disable" for all rules)
@@ -28,7 +29,7 @@ import re
 import sys
 from pathlib import Path
 
-__version__ = "0.5.0"
+__version__ = "1.0.7"
 
 # ---------------------------------------------------------------- config
 
@@ -96,10 +97,22 @@ RULES = [
         "title": "Hardcoded password/secret assignment",
         "advice": "Use env vars (os.getenv / process.env) or a vault. Never inline credentials.",
         "pattern": re.compile(
-            r"(?i)\b(password|passwd|pwd|secret|api_?key|access_?token|auth_?token)\b\s*[:=]\s*[\"'][^\"']{8,}[\"']"
+            r"(?i)\b(password|passwd|pwd|secret|api_?key|access_?token|auth_?token)\b\s*[:=]\s*[\"'][^\"'\n]{8,}[\"']"
         ),
         "exts": None,
         "skip_if": lambda line: bool(PLACEHOLDER_RE.search(line)),
+    },
+    {
+        "id": "env-secret",
+        "severity": "high",
+        "scope": "raw",
+        "title": "Hardcoded secret in a .env file",
+        "advice": "Move real values out of .env into a secret manager; commit only .env.example.",
+        "pattern": re.compile(r"(?m)^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\S{8,}\s*$"),
+        "exts": None,
+        "skip_if": None,
+        "manual": True,
+        "env_files": True,
     },
     {
         "id": "sql-injection",
@@ -122,7 +135,7 @@ RULES = [
         "title": "CORS allows all origins",
         "advice": "allow_origins=['*'] is fine for public APIs only. Restrict to real origins.",  # vibecheck: disable=cors-wildcard
         "pattern": re.compile(
-            r"allow_origins\s*=\s*\[[^\]]*[\"']\*[\"']|Access-Control-Allow-Origin[^\n]*\*|origin\s*:\s*[\"']\*[\"']"  # vibecheck: disable=cors-wildcard
+            r"allow_origins\s*=\s*\[[^\]\n]*[\"']\*[\"']|Access-Control-Allow-Origin[^\n]*\*|origin\s*:\s*[\"']\*[\"']"  # vibecheck: disable=cors-wildcard
         ),
         "exts": None,
         "skip_if": None,
@@ -154,6 +167,16 @@ RULES = [
         "title": "subprocess with shell=True",
         "advice": "shell=True enables command injection. Pass an args list instead.",
         "pattern": re.compile(r"shell\s*=\s*True"),
+        "exts": {".py"},
+        "skip_if": None,
+    },
+    {
+        "id": "os-shell",
+        "severity": "high",
+        "scope": "code",
+        "title": "Command execution via os.system / os.popen",
+        "advice": "os.system/os.popen run through a shell. Use subprocess with an argv list and shell=False.",
+        "pattern": re.compile(r"\bos\.(?:system|popen)\s*\("),
         "exts": {".py"},
         "skip_if": None,
     },
@@ -195,11 +218,13 @@ RULES = [
         "advice": "Use yaml.safe_load unless you fully trust the input.",
         "pattern": re.compile(r"yaml\.load\s*\("),
         "exts": {".py"},
-        "skip_if": lambda line: "Loader" in line or "safe_load" in line,
+        "skip_if": lambda line: ("safe_load" in line or "SafeLoader" in line
+                                 or "CSafeLoader" in line or "BaseLoader" in line
+                                 or "FullLoader" in line),
     },
     {
         "id": "except-pass",
-        "severity": "medium",
+        "severity": "low",
         "scope": "code",
         "title": "Swallowed exception (except: pass)",
         "advice": "Silent failures hide bugs. Log the error or re-raise with context.",
@@ -331,6 +356,28 @@ def mask_text(text, ext):
 
 # ---------------------------------------------------------------- scanning
 
+REDACT_PATTERNS = [
+    (re.compile(r"\b(AKIA)[0-9A-Z]{16}\b"),
+     lambda m: m.group(1) + "*" * 12 + "****"),
+    (re.compile(r"\b(sk-|ghp_|gho_|xox[baprs]-|AIza)[A-Za-z0-9_-]{10,}"),
+     lambda m: m.group(1) + "***redacted***"),
+    (re.compile(r"(?i)(\b(?:password|passwd|pwd|secret|api_?key|access_?token|auth_?token|token)\b\s*[:=]\s*)([\"'])([^\"']{0,4})[^\"']*([\"'])"),
+     lambda m: m.group(1) + m.group(2) + m.group(3) + "***" + m.group(4)),
+    (re.compile(r"(?m)^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*)([\"']?)\S{8,}([\"']?)\s*$"),
+     lambda m: m.group(1) + m.group(2) + "***redacted***" + m.group(3)),
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*"),
+     lambda m: "-----BEGIN PRIVATE KEY----- [REDACTED]"),  # vibecheck: disable=private-key
+]
+
+
+def redact_snippet(text):
+    """Mask credential material before it reaches reports, SARIF, or baselines."""
+    out = text
+    for pat, repl in REDACT_PATTERNS:
+        out = pat.sub(repl, out)
+    return out
+
+
 class Finding:
     __slots__ = ("rule", "severity", "file", "line", "snippet")
 
@@ -339,7 +386,7 @@ class Finding:
         self.severity = rule["severity"]
         self.file = str(file)
         self.line = line
-        self.snippet = snippet.strip()[:160]
+        self.snippet = redact_snippet(snippet.strip()[:160])
 
     def fingerprint(self):
         basis = f"{self.rule}|{self.file}|{self.snippet}"
@@ -406,12 +453,12 @@ def iter_files(root: Path, excludes):
         yield root
         return
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
+        if not path.is_file() or path.is_symlink():
             continue
         rel_parts = path.relative_to(root).parts
         if any(part in SKIP_DIRS for part in rel_parts[:-1]):
             continue
-        rel = str(Path(*rel_parts))
+        rel = Path(*rel_parts).as_posix()
         if any(re.search(pat, rel) for pat in excludes):
             continue
         if path.suffix.lower() not in CODE_EXTS and path.name != ".env":
@@ -423,9 +470,9 @@ def iter_files(root: Path, excludes):
 
 def scan_file(path: Path, rel_base: Path, excludes):
     try:
-        rel = str(path.relative_to(rel_base))
+        rel = path.relative_to(rel_base).as_posix()
     except ValueError:
-        rel = str(path)
+        rel = path.as_posix()
     if any(re.search(pat, rel) for pat in excludes):
         return []
     try:
@@ -446,6 +493,8 @@ def scan_file(path: Path, rel_base: Path, excludes):
     seen = set()
 
     for rule in RULES:
+        if rule.get("manual"):
+            continue
         if rule["exts"] is not None and ext not in rule["exts"]:
             continue
         target = {"code": code_mask, "raw": text, "comment": comment_mask}[rule["scope"]]
@@ -467,6 +516,18 @@ def scan_file(path: Path, rel_base: Path, excludes):
                 break
 
     findings.extend(structural_checks(rel, lines, ext))
+    if path.name.startswith(".env"):
+        env_rule = RULES_BY_ID["env-secret"]
+        for idx, line in enumerate(lines, 1):
+            if not env_secret_hit(line):
+                continue
+            if (idx, "env-secret") in sup or (idx, None) in sup:
+                continue
+            key = ("env-secret", idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(Finding(env_rule, rel, idx, line))
     if ext == ".py":
         for f in ast_findings(text, rel, lines):
             key = (f.rule, f.line)
@@ -518,35 +579,80 @@ def ast_findings(text, rel, lines):
         snippet = lines[lineno - 1] if 0 < lineno <= len(lines) else ""
         findings.append(Finding(rule, rel, lineno, snippet))
 
-    # alias tracking: `from builtins import eval as ev` -> {"ev": "eval"}
-    aliases = {}
+    # --- name resolution: imports, module/function aliases, bool constants ---
+    module_alias, value_alias, consts = {}, {}, {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
+        if isinstance(node, ast.Import):
             for a in node.names:
-                if a.name in ("eval", "exec"):
-                    aliases[a.asname or a.name] = a.name
+                top = (a.name or "").split(".")[0]
+                module_alias[a.asname or top] = a.name if a.asname else top
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            for a in node.names:
+                target = f"{mod}.{a.name}" if mod else a.name
+                if a.name in ("eval", "exec") or target in (
+                        "os.system", "os.popen", "pickle.load", "pickle.loads",
+                        "yaml.load"):
+                    value_alias[a.asname or a.name] = target
+        elif isinstance(node, ast.Assign):
+            if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                name = node.targets[0].id
+                val = node.value
+                if isinstance(val, ast.Constant) and isinstance(val.value, bool):
+                    consts[name] = val.value
+                dotted_val = _dotted(val)
+                if dotted_val:
+                    base, _, rest = dotted_val.partition(".")
+                    resolved = module_alias.get(base, base) + ("." + rest if rest else "")
+                    if resolved in ("eval", "exec", "os.system", "os.popen",
+                                    "pickle", "pickle.load", "pickle.loads",
+                                    "yaml", "yaml.load"):
+                        value_alias[name] = resolved
+
+    def resolve(dotted):
+        if not dotted:
+            return dotted
+        if dotted in value_alias:
+            return value_alias[dotted]
+        base, _, rest = dotted.partition(".")
+        base = value_alias.get(base) or module_alias.get(base) or base
+        resolved = base + ("." + rest if rest else "")
+        return value_alias.get(resolved, resolved)
+
+    def const_bool(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+            return node.value
+        if isinstance(node, ast.Name):
+            return consts.get(node.id)
+        return None
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            dotted = _dotted(node.func)
+            dotted = resolve(_dotted(node.func))
             short = dotted.split(".")[-1] if dotted else ""
-            canon = aliases.get(short, short)
 
-            if canon in ("eval", "exec"):
+            if dotted in ("eval", "exec", "builtins.eval", "builtins.exec"):
                 add("eval-exec", node.lineno)
             if dotted and dotted.startswith("hashlib.") and short in ("md5", "sha1"):
                 add("weak-hash", node.lineno)
             if dotted and dotted.startswith("pickle.") and short in ("load", "loads"):
                 add("pickle-load", node.lineno)
+            if dotted in ("os.system", "os.popen"):
+                add("os-shell", node.lineno)
             if dotted and dotted.startswith("yaml.") and short == "load":
-                if not any(kw.arg == "Loader" for kw in node.keywords):
+                loader = next((kw.value for kw in node.keywords if kw.arg == "Loader"), None)
+                if loader is None:
                     add("yaml-unsafe-load", node.lineno)
+                else:
+                    lname = resolve(_dotted(loader)) or ""
+                    if lname.split(".")[-1] in ("UnsafeLoader", "Loader"):
+                        add("yaml-unsafe-load", node.lineno)
             if short in ("run", "Popen", "call", "check_call", "check_output"):
                 for kw in node.keywords:
-                    if kw.arg == "shell" and _const_true(kw.value):
+                    if kw.arg == "shell" and const_bool(kw.value) is True:
                         add("shell-true", kw.value.lineno)
             for kw in node.keywords:
-                if kw.arg == "verify" and _const_false(kw.value):
+                if kw.arg == "verify" and const_bool(kw.value) is False:
                     add("verify-false", kw.value.lineno)
 
         if isinstance(node, ast.ExceptHandler):
@@ -556,20 +662,53 @@ def ast_findings(text, rel, lines):
     return findings
 
 
+ENV_SECRET_TOKENS = {"PASSWORD", "PASSWD", "PASS", "PWD", "SECRET", "TOKEN",
+                     "CREDENTIAL", "CREDENTIALS", "APIKEY", "ACCESSKEY",
+                     "PRIVATEKEY", "DBPASS"}
+
+
+def env_secret_hit(line):
+    """True when a .env-style line assigns a real-looking secret value."""
+    s = line.strip()
+    if not s or s.startswith("#"):
+        return False
+    m = re.match(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", s)
+    if not m:
+        return False
+    key, val = m.group(1).upper(), m.group(2).strip()
+    parts = [p for p in key.split("_") if p]
+    looks_secret = (
+        any(p in ENV_SECRET_TOKENS for p in parts)
+        or key.endswith(("_KEY", "_TOKEN", "_SECRET", "_PASS"))
+    )
+    if not looks_secret:
+        return False
+    if any(p in ("PUBLIC", "PUB") for p in parts):
+        return False
+    val = val.strip('"').strip("'")
+    if len(val) < 8:
+        return False
+    if val.startswith(("$", "{{", "<")):
+        return False
+    if PLACEHOLDER_RE.search(val):
+        return False
+    return True
+
+
 def structural_checks(rel, lines, ext):
     findings = []
     n = len(lines)
 
     if n > 800:
         findings.append(Finding(
-            {"id": "file-too-long", "severity": "low"}, rel, 1,
+            {"id": "file-too-long", "severity": "info"}, rel, 1,
             f"file is {n} lines long",
         ))
 
     long_lines = sum(1 for ln in lines if len(ln) > 140)
     if long_lines > 10:
         findings.append(Finding(
-            {"id": "long-lines", "severity": "low"}, rel, 1,
+            {"id": "long-lines", "severity": "info"}, rel, 1,
             f"{long_lines} lines exceed 140 chars",
         ))
 
@@ -582,7 +721,7 @@ def structural_checks(rel, lines, ext):
         if body_lines > 100:
             lineno = text.count("\n", 0, pos) + 1
             findings.append(Finding(
-                {"id": "long-function", "severity": "low"}, rel, lineno,
+                {"id": "long-function", "severity": "info"}, rel, lineno,
                 f"'{name}' is ~{body_lines} lines long",
             ))
     return findings
@@ -596,7 +735,9 @@ def structural_checks(rel, lines, ext):
 # Fix pattern value None = drop the whole line.
 FIX_PATTERNS = {
     "yaml-unsafe-load": {
-        "safe": [(re.compile(r"yaml\.load\s*\("), "yaml.safe_load(")],
+        # safe_load rejects arbitrary Python objects: this changes behavior,
+        # so it requires the explicit --fix-unsafe opt-in.
+        "unsafe": [(re.compile(r"yaml\.load\s*\("), "yaml.safe_load(")],
     },
     "debug-log": {
         "unsafe": [(re.compile(r"^\s*console\.log\(.*\);?\s*$"), None)],
@@ -621,6 +762,13 @@ def apply_fixes(findings, rel_base, include_unsafe, dry_run):
     for rel, items in sorted(by_file.items()):
         path = rel_base / rel
         try:
+            base = rel_base.resolve()
+            path.resolve().relative_to(base)
+        except (OSError, ValueError):
+            continue  # never edit outside the scanned root (or through symlinks)
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
             lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
         except OSError:
             continue
@@ -633,6 +781,10 @@ def apply_fixes(findings, rel_base, include_unsafe, dry_run):
             if tier == "unsafe" and not include_unsafe:
                 continue
             text = original = lines[f.line - 1]
+            nxt = lines[f.line] if f.line < len(lines) else ""
+            if f.rule == "yaml-unsafe-load" and (
+                    "Loader" in text or "safe_load" in text or "Loader" in nxt):
+                continue  # rewriting would duplicate/preserve an incompatible Loader arg
             changed = False
             for pat, repl in tiers[tier]:
                 if repl is None:
@@ -652,8 +804,8 @@ def apply_fixes(findings, rel_base, include_unsafe, dry_run):
                     "file": rel,
                     "line": f.line,
                     "tier": tier,
-                    "before": original.strip()[:120],
-                    "after": text.strip()[:120],
+                    "before": redact_snippet(original.strip()[:120]),
+                    "after": redact_snippet(text.strip()[:120]),
                 })
         if dirty and not dry_run:
             path.write_text("".join(lines), encoding="utf-8")
@@ -673,8 +825,14 @@ def compute_score(findings):
             total += min(cnt, 3) * SEVERITY_WEIGHT[rule["severity"]]
     for rid, cnt in deductions.items():
         if rid in ("file-too-long", "long-lines", "long-function"):
-            total += min(cnt, 3) * SEVERITY_WEIGHT["low"]
-    return max(0, min(100, 100 - total))
+            total += min(cnt, 3) * SEVERITY_WEIGHT["info"]
+    score = max(0, min(100, 100 - total))
+    severities = {f.severity for f in findings}
+    if "critical" in severities:
+        score = min(score, 30)
+    elif "high" in severities:
+        score = min(score, 69)
+    return score
 
 
 def summarize(findings):
@@ -825,6 +983,7 @@ def main(argv=None):
         description="Audit AI-generated code before it ships. Zero dependencies.",
     )
     ap.add_argument("path", nargs="?", default=".", help="file or directory to scan (default: .)")
+    ap.add_argument("--version", action="version", version=f"vibecheck {__version__}")
     ap.add_argument("--format", choices=["text", "json", "md", "sarif"], default="text")
     ap.add_argument("--min-score", type=int, default=70, help="minimum passing score (default 70)")
     ap.add_argument("--fail-on", choices=SEVERITY_ORDER, default="critical",
@@ -849,7 +1008,7 @@ def main(argv=None):
     rel_base = root if root.is_dir() else root.parent
 
     findings = []
-    for fpath in iter_files(root, args.exclude):
+    for fpath in iter_files(root, excludes):
         findings.extend(scan_file(fpath, rel_base, excludes))
 
     if args.write_baseline:
@@ -881,7 +1040,7 @@ def main(argv=None):
         if fixes and not dry:
             # re-scan so score reflects the fixed code
             findings = []
-            for fpath in iter_files(root, args.exclude):
+            for fpath in iter_files(root, excludes):
                 findings.extend(scan_file(fpath, rel_base, excludes))
             if args.baseline:
                 bpath = Path(args.baseline)

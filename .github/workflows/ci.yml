@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: test suite (44 tests: detection, regressions, FP guarantees, v1.0 hardening)
+        run: python tests/test_vibecheck.py
+
+      - name: benchmark (ground-truth corpus: 15/15)
+        run: python benchmark.py
+
+      - name: self-scan (dogfood; no high/critical findings allowed)
+        run: python vibecheck.py vibecheck.py --min-score 90 --fail-on high --format md

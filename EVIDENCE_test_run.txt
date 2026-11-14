@@ -1,54 +1,48 @@
-════ vibecheck EVIDENCE LOG (v0.5.0 — autofix) ════
-timestamp : 2026-11-14T23:17:40+08:00
-tool sha256: 2a421d0e14d31fef43b88769559104fa5d30e7b123f68afc5c5f07a0fb194306
+========================================================================
+ vibecheck EVIDENCE LOG (v1.0.7)
+========================================================================
+timestamp : 2026-11-14T20:17:38Z
+tool sha256: f525c530389873ec37405eb2a5fb38fb0c57c46d7cf281d0ff40f259cd01db8c
+clawhub   : thiennhant95/vibecheck@1.0.7
 
-════ TEST SUITE (30 tests) ════
-----------------------------------------------------------------------
-Ran 30 tests in 16.052s
+---- TEST SUITE (44 tests) ----
+Ran 44 tests
+OK (skipped=1: openclaw source not present on this machine)
 
-OK
-
-════ BENCHMARK ════
-── vibecheck benchmark (ground-truth corpus) ──────────
+---- BENCHMARK (ground-truth corpus) ----
 files: 9   expected pairs: 15   found pairs: 15
 TP 15   FP 0   FN 0
 precision 1.000   recall 1.000   F1 1.000
 
-════ AUTOFIX DEMO ════
---- before ---
-import yaml
-import requests
+---- DEMO (vulnerable app) ----
+vibe score 0/100   DANGER - do not ship
+findings: 16   exit code: 1
 
-def load(s):
-    return yaml.load(s)
+---- SELF-SCAN (dogfood) ----
+vibe score 100/100   findings: 1 (info: file-too-long)
 
-def get(u):
-    return requests.get(u, verify=False)
-── vibecheck ──────────────────────────────
-Vibe score: 90/100  [CLEAN — production ready]
-Findings: 1 high
-Autofix: 1 applied
+---- REAL-WORLD SPOT CHECK (informational, not a benchmark) ----
+pallets/click (179 files):     45 findings -> score 84, OK
+  (16 low except-pass, 2 medium pickle in tests/helpers, 27 info-level)
+python-dotenv (48 files):       1 finding  -> score 100, CLEAN
+  (1 info: file-too-long)
 
-HIGH     app.py:8  [verify-false]
---- after --fix (safe only) ---
-import yaml
-import requests
+---- CLAWHUB SECURITY AUDIT (v1.0.7) ----
+Outcome: Pass
+A.I.G: 0 findings (clean)
+SkillSpector: 0 issues (recommendation CAUTION; benign, high confidence)
+Coverage: 7/7 components
 
-def load(s):
-    return yaml.safe_load(s)
-
-def get(u):
-    return requests.get(u, verify=False)
-── vibecheck ──────────────────────────────
-Vibe score: 100/100  [CLEAN — production ready]
-Findings: 
-Autofix: 1 applied
---- after --fix-unsafe ---
-import yaml
-import requests
-
-def load(s):
-    return yaml.safe_load(s)
-
-def get(u):
-    return requests.get(u)
+---- RELEASE NOTES ----
+v1.0.0  AST hardening (aliases, const propagation, unsafe YAML loaders,
+        os.system), .env secrets, severity caps, Windows-safe ignores
+v1.0.1  redact secrets in reports/SARIF/baselines; autofix confined to
+        scan root (no symlinks); YAML fix skips Loader= lines; CI example
+        no longer publishes reports to public summaries
+v1.0.2  declare autofix/baseline capabilities; remove executable-looking
+        doc snippets
+v1.0.3  all autofixes are behavior-changing -> require --fix-unsafe
+v1.0.4  redact autofix before/after previews; fix manifest frontmatter
+v1.0.5  remove unsupported permissions frontmatter
+v1.0.6  fix YAML colon in description; align CLI version
+v1.0.7  declare permissions as flow-style list (full manifest coverage)

@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vibecheck"
-version = "0.4.0"
+version = "1.0.7"
 description = "Audit AI-generated code before it ships — security & AI-slop scanner with AST + regex hybrid engine"
 readme = "README.en.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 keywords = ["security", "linter", "ai-code", "vibe-coding", "sast", "code-audit"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -19,6 +19,10 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Security",
 ]
+
+[project.urls]
+Homepage = "https://github.com/thiennhant95/vibecheck"
+Repository = "https://github.com/thiennhant95/vibecheck"
 
 [project.scripts]
 vibecheck = "vibecheck:main"

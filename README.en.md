@@ -27,8 +27,8 @@ Or copy the single `vibecheck.py` file into your project. Done.
 python3 vibecheck.py ./src                          # scan a directory
 python3 vibecheck.py ./src --format md > report.md  # Markdown for PR comments
 python3 vibecheck.py ./src --format sarif > out.sarif  # GitHub code scanning
-python3 vibecheck.py ./src --fix                    # safe auto-fixes (behavior-preserving)
-python3 vibecheck.py ./src --fix --fix-unsafe       # include behavior-changing fixes
+python3 vibecheck.py ./src --fix-dry-run --fix-unsafe  # preview behavior-changing autofixes
+python3 vibecheck.py ./src --fix --fix-unsafe          # apply behavior-changing autofixes (opt-in)
 python3 vibecheck.py ./src --min-score 80 --fail-on high  # CI gate
 
 # Adopt on legacy code: record known issues, only fail on NEW ones
@@ -40,20 +40,34 @@ python3 vibecheck.py ./src --baseline .vibecheck-baseline.json
 
 ## What it catches
 
-16 rules across 3 scopes — secrets & SQL injection (raw text), code execution & TLS issues (code only, strings/comments masked so **no false positives on rule-definition strings**), TODO markers (comments only). See the Vietnamese README for the full rule table.
+18 rules across 3 scopes — secrets & SQL injection (raw text), code execution & TLS issues (code only, strings/comments masked so **no false positives on rule-definition strings**), TODO markers (comments only). The AST layer catches aliased eval/exec calls, aliased pickle modules, shell execution hidden behind a variable, TLS verification disabled behind a variable, os.system/os.popen, and explicitly unsafe YAML loaders. Secrets in `.env` files are detected even without quotes. See the Vietnamese README for the full rule table.
+
+## Scoring caps
+
+A finding can never be hidden by a good score: **HIGH** caps the score at 69 (RISKY) and **CRITICAL** caps it at 30 (DANGER), so "production ready" is impossible while a security finding is open.
 
 ## Suppression
 
 ```python
-result = eval(x)  # vibecheck: disable=eval-exec
+# vibecheck: disable=eval-exec      # next line is not checked by this rule
+dangerous_call(trusted_input)
+
+risky_call(arg)  # vibecheck: disable=eval-exec
 # vibecheck: ignore   (first line of file = skip whole file)
 ```
 
-Plus `.vibecheckignore` (one regex per line).
+Plus `.vibecheckignore` (one regex per line; POSIX paths on every OS).
 
 ## Tested with evidence
 
-27 automated tests (`tests/test_vibecheck.py -v`), 15s, zero deps — covering exact-line detection, regression tests for bugs found in dogfood, false-positive guarantees, baseline, SARIF, 1MB minified files, binaries, Unicode, and a real production codebase scan (0 false positives).
+44 automated tests (`python tests/test_vibecheck.py`), zero deps — exact-line detection, regression tests for bugs found in dogfood, false-positive guarantees, baseline, SARIF, 1MB minified files, binaries, Unicode, v1.0 hardening (aliases, constant propagation, `.env`, score caps, Windows-safe ignores), report redaction, and autofix confinement, plus a real production codebase scan (0 false positives). `benchmark.py` runs a 9-file ground-truth corpus (15 pairs) as a regression gate — not an industry-wide benchmark.
+
+## Limitations
+
+- Static analysis with one-hop alias/AST resolution: no cross-file data-flow or taint tracking.
+- Unquoted `KEY=value` secrets are only checked in `.env*` files; split/concatenated secrets can evade.
+- SQL injection is pattern-based; dynamically composed queries may evade.
+- Not a replacement for Semgrep/Bandit/CodeQL — it is a fast pre-merge gate.
 
 ## Integrations
 

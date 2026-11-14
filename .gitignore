@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+tests/.sandbox/
+.vibecheck-baseline.json
+vibecheck.sarif
+vibecheck-report.md
+vibecheck.md

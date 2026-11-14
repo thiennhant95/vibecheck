@@ -45,6 +45,17 @@ python3 vibecheck.py . --exclude "test" --exclude "generated"
 
 **Exit codes:** `0` = pass · `1` = fail (dưới min-score hoặc có finding nặng) · `2` = lỗi input
 
+### Điểm bị chặn theo mức nặng
+
+Không thể "90 điểm CLEAN" khi còn lỗi bảo mật:
+
+| Còn finding | Score tối đa | Verdict |
+|---|---|---|
+| CRITICAL | 30 | DANGER — do not ship |
+| HIGH | 69 | RISKY — fix before merge |
+
+Nhờ vậy một lỗi tắt kiểm chứng TLS hay SQL injection không bao giờ bị báo là "production ready".
+
 ## Những gì nó bắt được
 
 | Rule | Severity | Mô tả |
@@ -53,8 +64,10 @@ python3 vibecheck.py . --exclude "test" --exclude "generated"
 | `secret-aws` | 🔴 critical | AWS access key hardcode |
 | `secret-token` | 🟠 high | OpenAI/GitHub/Slack/Google token hardcode |
 | `secret-assignment` | 🟠 high | password/secret gán thẳng trong code |
+| `env-secret` | 🟠 high | Secret thật trong file `.env` (kể cả không quote) |
 | `eval-exec` / `js-eval` | 🟠 high | eval/exec/new Function = RCE |
-| `shell-true` | 🟠 high | subprocess shell=True → command injection |
+| `shell-true` | 🟠 high | subprocess bật shell → command injection |
+| `os-shell` | 🟠 high | os.system/os.popen chạy qua shell |
 | `sql-injection` | 🟠 high | SQL ghép chuỗi (f-string/.format/%) |
 | `verify-false` | 🟠 high | Tắt kiểm chứng TLS |
 | `cors-wildcard` | 🟡 medium | CORS cho phép mọi origin |
@@ -73,7 +86,7 @@ Mỗi rule chỉ match đúng nơi nó cần tìm:
 | Scope | Match ở đâu | Ví dụ rule |
 |---|---|---|
 | `raw` | Toàn bộ text (secret/SQL sống trong string) | secret-*, sql-injection, cors |
-| `code` | Chỉ phần code — string & comment bị che | eval, shell-true, verify=False, except:pass |
+| `code` | Chỉ phần code — string & comment bị che | eval/exec, shell-true, TLS-off, except:pass |
 | `comment` | Chỉ trong comment | todo-fixme |
 
 Nhờ vậy quét chính vibecheck.py (bảng định nghĩa rule toàn regex!) vẫn sạch findings bảo mật — dogfood thật. (Điểm thấp nhất có thể gặp chỉ là cảnh báo cấu trúc `file-too-long` khi file lớn — và đó là hành vi đúng.)
@@ -82,9 +95,9 @@ Nhờ vậy quét chính vibecheck.py (bảng định nghĩa rule toàn regex!) 
 
 ```python
 # vibecheck: disable=eval-exec      # dòng dưới bị bỏ qua rule này
-eval(trusted_expr)
+dangerous_call(trusted_input)
 
-result = eval(x)  # vibecheck: disable=eval-exec   # trailing: áp dụng cho chính dòng này
+risky_call(arg)  # vibecheck: disable=eval-exec   # trailing: áp dụng cho chính dòng này
 
 # vibecheck: ignore                  # dòng đầu file: bỏ qua toàn bộ file
 ```
@@ -108,13 +121,10 @@ python3 vibecheck.py demo
 Vibe score: 0/100  [DANGER — do not ship]
 Findings: 1 critical  8 high  4 medium  1 low  2 info
 
-CRITICAL vulnerable_app.py:8  [secret-aws]
-         AWS_ACCESS_KEY_ID = "AKIAEXAMPLEEXAMPLE12"
-HIGH     vulnerable_app.py:19  [sql-injection]
-         query = f"SELECT * FROM users WHERE name = '{username}'"
-HIGH     vulnerable_app.py:15  [shell-true]
-         subprocess.run("ls " + user_input, shell=True)
-... (16 findings total, 14/16 rules triggered)
+CRITICAL vulnerable_app.py:8   [secret-aws]    AKIA************REDACTED
+HIGH     vulnerable_app.py:19  [sql-injection] query built by interpolation
+HIGH     vulnerable_app.py:15  [shell-true]    shell command built from input
+... (16 findings total, 14/18 rules triggered; secret values are redacted in reports)
 ```
 
 Code sạch? 100/100, `CLEAN — production ready`, exit 0. ✅
@@ -123,26 +133,28 @@ Code sạch? 100/100, `CLEAN — production ready`, exit 0. ✅
 
 ```yaml
 - name: vibecheck
-  run: |
-    python3 vibecheck.py ./src --min-score 80 --fail-on high --format md > vibecheck.md
-    cat vibecheck.md >> $GITHUB_STEP_SUMMARY
+  run: python3 vibecheck.py ./src --min-score 80 --fail-on high --format sarif > vibecheck.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: vibecheck.sarif
 ```
+
+> Báo cáo có thể chứa ngữ cảnh source code (secret đã được redact tự động, nhưng vẫn nên coi là tài liệu nội bộ). Đừng đăng thẳng lên PR comment/step summary công khai; dùng artifact riêng hoặc code scanning.
 
 ## Autofix — sửa lỗi tự động an toàn
 
 ```bash
-python3 vibecheck.py ./src --fix              # chỉ sửa lỗi SAFE (không đổi hành vi)
-python3 vibecheck.py ./src --fix-dry-run      # xem trước, không ghi gì
-python3 vibecheck.py ./src --fix --fix-unsafe # thêm fix đổi hành vi (opt-in)
+python3 vibecheck.py ./src --fix-dry-run --fix-unsafe   # xem trước, không ghi gì
+python3 vibecheck.py ./src --fix --fix-unsafe           # áp dụng (đổi hành vi, cần opt-in)
 ```
 
 | Tier | Rule | Fix | Điều kiện |
 |---|---|---|---|
-| 🟢 safe | `yaml-unsafe-load` | `yaml.load(` → `yaml.safe_load(` | `--fix` |
-| 🟡 unsafe | `verify-false` | Bỏ `verify=False` | `--fix --fix-unsafe` |
+| 🟡 unsafe | `yaml-unsafe-load` | `yaml.load` → `yaml.safe_load` (bỏ qua nếu có `Loader=`) | `--fix --fix-unsafe` |
+| 🟡 unsafe | `verify-false` | Bỏ tham số tắt kiểm chứng TLS | `--fix --fix-unsafe` |
 | 🟡 unsafe | `debug-log` | Xóa dòng `console.log(...)` | `--fix --fix-unsafe` |
 
-Nguyên tắc: **không bao giờ tự ý đổi hành vi chương trình**. Fix safe = không đổi kết quả; fix unsafe = đổi hành vi thật → phải opt-in rõ ràng.
+Mọi autofix hiện tại đều **đổi hành vi chương trình** (`safe_load` từ chối object tuỳ ý; bỏ `verify`/log thay đổi runtime), nên đều nằm sau `--fix-unsafe` như một consent tường minh. `--fix` một mình chỉ áp dụng tier "safe" (hiện chưa có rule nào), hữu ích cho tương lai. `--fix` **ghi file** và chỉ áp dụng trong thư mục được quét (bỏ qua symlink/đường dẫn ra ngoài). Luôn chạy `--fix-dry-run` và review diff trước; không dùng autofix trong CI mà không commit kết quả.
 
 ## Baseline — nhận nuôi code legacy
 
@@ -171,8 +183,22 @@ Output SARIF 2.1.0 chuẩn — upload thẳng lên GitHub Security tab. Xem mẫ
 - [x] Baseline cho code legacy
 - [x] SARIF 2.1.0 output (GitHub code scanning)
 - [x] Ví dụ GitHub Actions + pre-commit
+- [x] Autofix (`--fix`) 2 tầng an toàn/không an toàn
+- [x] AST hardening: alias, constant propagation, YAML unsafe loader, `os.system`
+- [x] Secret trong `.env` + score cap theo severity
 - [ ] Rule pack mở rộng (React, Docker, K8s, Terraform)
-- [ ] Autofix (`--fix`) cho các lỗi đơn giản
+- [ ] Cross-file data-flow (taint tracking)
+
+## Giới hạn (nói thật)
+
+- Phân tích tĩnh + AST một lớp alias: không theo dõi luồng dữ liệu xuyên file/qua nhiều biến.
+- Secret dạng `KEY=value` không quote chỉ bắt trong file `.env*`; secret chia nhỏ/ghép chuỗi có thể lọt.
+- SQL injection bắt theo mẫu ghép chuỗi; truy vấn dựng động phức tạp có thể lọt.
+- Không thay thế Semgrep/Bandit/CodeQL cho audit chuyên sâu; đây là lớp kiểm tra nhanh trước khi merge.
+
+## Benchmark
+
+`benchmark.py` chạy 9 file corpus (15 cặp ground-truth): precision/recall dùng làm **regression gate**, không phải benchmark toàn ngành. Kết quả hiện tại: 15/15, FP 0, FN 0. Test suite: 44 test (detection, regression, false-positive, Unicode, baseline, SARIF, autofix, v1.0 hardening, redaction).
 
 ## License
 

@@ -195,7 +195,8 @@ class EvidenceTest(unittest.TestCase):
 
     def test_unicode_vietnamese_emoji(self):
         f = self.tmp / "uni.py"
-        f.write_text('# TODO: tiếng Việt có dấu 🚀\npassword = "MậtKhẩuBíMật2026"\n')
+        f.write_text('# TODO: tiếng Việt có dấu 🚀\npassword = "MậtKhẩuBíMật2026"\n',
+                    encoding="utf-8")
         p, d = run_json(f)
         got = {(x["rule"], x["line"]) for x in d["findings"]}
         self.assertIn(("todo-fixme", 1), got)
@@ -210,6 +211,117 @@ class EvidenceTest(unittest.TestCase):
     def test_nonexistent_path_exit_2(self):
         p = run_vibecheck(self.tmp / "nope")
         self.assertEqual(p.returncode, 2)
+
+    # ---------- v1.0 hardening claims ----------
+
+    def test_version_flag(self):
+        p = run_vibecheck("--version")
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("vibecheck 1.", p.stdout)
+
+    def test_high_finding_caps_score_at_risky(self):
+        """Claim: a HIGH finding can never yield a CLEAN production-ready score."""
+        f = self.tmp / "tls.py"
+        f.write_text("import requests\n\ndef get(u):\n    return requests.get(u, verify=False)\n")
+        p, d = run_json(f)
+        self.assertLessEqual(d["score"], 69)
+        self.assertNotIn("CLEAN", d["verdict"])
+        self.assertIn("RISKY", d["verdict"])
+
+    def test_critical_finding_caps_score_at_danger(self):
+        f = self.tmp / "key.py"
+        f.write_text('AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"\n')
+        p, d = run_json(f)
+        self.assertLessEqual(d["score"], 30)
+        self.assertIn("DANGER", d["verdict"])
+
+    def test_os_system_detected(self):
+        f = self.tmp / "sh.py"
+        f.write_text("import os\n\nos.system('ls ' + user)\n")
+        p, d = run_json(f)
+        self.assertIn("os-shell", {x["rule"] for x in d["findings"]})
+
+    def test_shell_true_via_variable(self):
+        f = self.tmp / "shv.py"
+        f.write_text("import subprocess\n\nflag = True\nsubprocess.run('ls ' + u, shell=flag)\n")
+        p, d = run_json(f)
+        self.assertIn("shell-true", {x["rule"] for x in d["findings"]})
+
+    def test_verify_false_via_variable(self):
+        f = self.tmp / "vfy.py"
+        f.write_text("import requests\n\noff = False\nrequests.get(url, verify=off)\n")
+        p, d = run_json(f)
+        self.assertIn("verify-false", {x["rule"] for x in d["findings"]})
+
+    def test_eval_alias_detected(self):
+        f = self.tmp / "alias.py"
+        f.write_text("runner = eval\nrunner(payload)\n")
+        p, d = run_json(f)
+        self.assertIn("eval-exec", {x["rule"] for x in d["findings"]})
+
+    def test_pickle_module_alias_detected(self):
+        f = self.tmp / "palias.py"
+        f.write_text("import pickle as p\n\np.loads(blob)\n")
+        p, d = run_json(f)
+        self.assertIn("pickle-load", {x["rule"] for x in d["findings"]})
+
+    def test_yaml_unsafe_loader_detected(self):
+        f = self.tmp / "yu.py"
+        f.write_text("import yaml\n\nyaml.load(raw, Loader=yaml.UnsafeLoader)\n")
+        p, d = run_json(f)
+        self.assertIn("yaml-unsafe-load", {x["rule"] for x in d["findings"]})
+
+    def test_env_file_secrets_detected(self):
+        (self.tmp / ".env").write_text(
+            "PASSWORD=hunter2hunter2\nPUBLIC_KEY=abcdefgh12345678\nAPI_TOKEN=abcdef1234567890\n")
+        p, d = run_json(self.tmp)
+        lines = {x["line"] for x in d["findings"] if x["rule"] == "env-secret"}
+        self.assertEqual(lines, {1, 3}, f"env findings: {d['findings']}")
+
+    def test_ignore_file_works_cross_platform(self):
+        """Claim: .vibecheckignore uses POSIX paths on every OS (Windows regression)."""
+        sub = self.tmp / "sub"
+        sub.mkdir()
+        (sub / "leak.py").write_text('AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"\n')
+        (self.tmp / "ok.py").write_text("x = 1\n")
+        (self.tmp / ".vibecheckignore").write_text("^sub/\n")
+        p, d = run_json(self.tmp)
+        self.assertEqual(d["findings"], [], f"ignore failed: {d['findings']}")
+
+    def test_reports_redact_secret_values(self):
+        """Claim: credential values never reach JSON/SARIF/Markdown output."""
+        f = self.tmp / "secrets.py"
+        f.write_text(
+            'AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"\n'
+            'password = "SuperSecretPassword123"\n'
+            'OPENAI_API_KEY = "sk-proj-abc123def456ghi789jkl012mno345"\n')
+        p, d = run_json(f)
+        self.assertNotIn("IOSFODNN7EXAMPLE", p.stdout)
+        self.assertNotIn("SuperSecretPassword123", p.stdout)
+        self.assertNotIn("abc123def456ghi789", p.stdout)
+        self.assertTrue(any("***" in x["snippet"] for x in d["findings"]), d["findings"])
+        # baselines must not leak the secret either
+        bl = self.tmp / "bl.json"
+        run_vibecheck(f, "--write-baseline", str(bl))
+        self.assertNotIn("SuperSecretPassword123", bl.read_text(encoding="utf-8"))
+
+    def test_autofix_skips_yaml_loader_argument(self):
+        """Claim: --fix never produces invalid yaml.safe_load(..., Loader=...)."""
+        f = self.tmp / "yl.py"
+        original = "import yaml\n\nvalue = yaml.load(raw, Loader=yaml.UnsafeLoader)\n"
+        f.write_text(original)
+        run_vibecheck(f, "--fix")
+        self.assertEqual(f.read_text(), original, "unsafe Loader rewrite is back")
+
+    def test_autofix_output_is_redacted(self):
+        """Claim: autofix before/after previews do not leak credential values."""
+        f = self.tmp / "fx_secret.py"
+        f.write_text('import yaml\n\ncfg = yaml.load(raw)  # password = "SuperSecretPassword123"\n')
+        p = run_vibecheck(f, "--fix-dry-run", "--fix-unsafe", "--format", "json")
+        self.assertNotIn("SuperSecretPassword123", p.stdout)
+        d = json.loads(p.stdout)
+        self.assertEqual(d["autofix"]["count"], 1)
+        self.assertIn("***", d["autofix"]["applied"][0]["before"])
 
     # ---------- CI contract claims ----------
 
@@ -277,12 +389,14 @@ class EvidenceTest(unittest.TestCase):
 
     # ---------- autofix claims ----------
 
-    def test_autofix_safe_yaml(self):
-        """Claim: --fix safely rewrites yaml.load -> yaml.safe_load in place."""
+    def test_autofix_yaml_requires_unsafe_opt_in(self):
+        """Claim: behavior-changing YAML rewrite needs --fix-unsafe."""
         f = self.tmp / "fix1.py"
         f.write_text("import yaml\n\ndef load(s):\n    return yaml.load(s)\n")
-        p = run_vibecheck(f, "--fix")
-        self.assertIn("yaml.safe_load", f.read_text(), "safe fix not applied")
+        run_vibecheck(f, "--fix")  # safe tier only: must not rewrite YAML semantics
+        self.assertIn("yaml.load(s)", f.read_text(), "YAML rewrite ran without opt-in")
+        run_vibecheck(f, "--fix", "--fix-unsafe")
+        self.assertIn("yaml.safe_load", f.read_text(), "unsafe fix not applied after opt-in")
         self.assertNotIn("yaml.load", f.read_text().replace("yaml.safe_load", ""))
         # re-scan: finding gone, score restored
         p, d = run_json(f)
@@ -304,7 +418,7 @@ class EvidenceTest(unittest.TestCase):
         f = self.tmp / "fix3.py"
         original = "import yaml\n\ndef load(s):\n    return yaml.load(s)\n"
         f.write_text(original)
-        p = run_vibecheck(f, "--fix-dry-run", "--format", "json")
+        p = run_vibecheck(f, "--fix-dry-run", "--fix-unsafe", "--format", "json")
         self.assertEqual(f.read_text(), original, "dry-run wrote to disk!")
         d = json.loads(p.stdout)
         self.assertTrue(d["autofix"]["dry_run"])

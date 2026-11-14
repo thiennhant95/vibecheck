@@ -1,0 +1,10 @@
+tests/
+corpus/
+demo/
+.github/
+benchmark.py
+BENCHMARK.json
+DEMO_REPORT.md
+EVIDENCE_test_run.txt
+pyproject.toml
+.vibecheckignore

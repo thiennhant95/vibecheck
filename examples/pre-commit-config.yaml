@@ -1,4 +1,4 @@
-# .pre-commit-config.yaml — dùng với pre-commit (https://pre-commit.com)
+# .pre-commit-config.yaml - pre-commit hook for vibecheck (https://pre-commit.com)
 repos:
   - repo: local
     hooks:
