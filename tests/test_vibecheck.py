@@ -23,10 +23,12 @@ DEMO = ROOT / "demo"
 
 
 def run_vibecheck(*args):
-    """Run the CLI, return CompletedProcess."""
+    """Run the CLI, return CompletedProcess (UTF-8 on every OS)."""
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     return subprocess.run(
         [sys.executable, str(TOOL), *[str(a) for a in args]],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=120, env=env,
     )
 
 

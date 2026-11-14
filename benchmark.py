@@ -8,6 +8,7 @@ Run: python3 benchmark.py
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,10 +31,12 @@ EXPECTED = {
 
 
 def run():
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     p = subprocess.run(
         [sys.executable, str(TOOL), str(CORPUS), "--format", "json",
          "--min-score", "0", "--fail-on", "info"],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=120, env=env,
     )
     data = json.loads(p.stdout)
     found = {(f["file"], f["rule"]) for f in data["findings"]}
@@ -46,7 +49,7 @@ def run():
     recall = len(tp) / (len(tp) + len(fn)) if (tp or fn) else 1.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
 
-    print("── vibecheck benchmark (ground-truth corpus) ──────────")
+    print("== vibecheck benchmark (ground-truth corpus) ===========")
     print(f"files: {len(EXPECTED)}   expected pairs: {len(expected)}   found pairs: {len(found)}")
     print(f"TP {len(tp)}   FP {len(fp)}   FN {len(fn)}")
     print(f"precision {precision:.3f}   recall {recall:.3f}   F1 {f1:.3f}")

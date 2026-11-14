@@ -27,9 +27,10 @@ import hashlib
 import json
 import re
 import sys
+from contextlib import suppress
 from pathlib import Path
 
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 
 # ---------------------------------------------------------------- config
 
@@ -978,6 +979,10 @@ def render_sarif(findings, score, counts, min_score, suppressed=0):
 # ---------------------------------------------------------------- main
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        with suppress(AttributeError, OSError):
+            # Windows consoles default to cp1252; never crash on reports.
+            stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(
         prog="vibecheck",
         description="Audit AI-generated code before it ships. Zero dependencies.",
