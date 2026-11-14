@@ -19,10 +19,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: test suite (44 tests: detection, regressions, FP guarantees, v1.0 hardening)
+      - name: test suite (44 tests - detection, regressions, FP guarantees, v1.0 hardening)
         run: python tests/test_vibecheck.py
 
-      - name: benchmark (ground-truth corpus: 15/15)
+      - name: benchmark (ground-truth corpus 15/15)
         run: python benchmark.py
 
       - name: self-scan (dogfood; no high/critical findings allowed)
