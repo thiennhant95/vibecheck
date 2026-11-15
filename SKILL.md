@@ -5,7 +5,7 @@ allowed-tools: Read, Bash(python3:*)
 permissions: [file_read, file_write, env]
 ---
 
-# vibecheck v1.0.8
+# vibecheck v1.0.9
 
 CLI audit code AI-generated: chấm điểm vibe 0-100, bắt lỗ hổng bảo mật & AI slop. Zero dependency, chỉ cần Python 3.8+.
 

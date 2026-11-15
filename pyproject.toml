@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vibecheck"
-version = "1.0.8"
+version = "1.0.9"
 description = "Audit AI-generated code before it ships — security & AI-slop scanner with AST + regex hybrid engine"
-readme = "README.en.md"
+readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
 keywords = ["security", "linter", "ai-code", "vibe-coding", "sast", "code-audit"]
