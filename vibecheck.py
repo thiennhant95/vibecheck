@@ -30,7 +30,7 @@ import sys
 from contextlib import suppress
 from pathlib import Path
 
-__version__ = "1.0.9"
+__version__ = "1.0.10"
 
 # ---------------------------------------------------------------- config
 
