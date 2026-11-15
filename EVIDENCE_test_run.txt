@@ -1,53 +1,25 @@
 ========================================================================
- vibecheck EVIDENCE LOG (v1.0.8)
+ vibecheck EVIDENCE LOG (v1.0.9 - English README)
 ========================================================================
-timestamp : 2026-11-14T20:31:36Z
-tool sha256: d385c21d9c6f3095a5b80448a1a27c3daa5abf2f1c2032fd20bca91424a93589
+timestamp : 2026-11-15T02:04:16Z
+tool sha256: 9dabda7c79c36ada785e5ace476b883e77546257872a4bc8fa67adf74bcf1d07
 clawhub   : thiennhant95/vibecheck
 
 ---- TEST SUITE (44 tests) ----
-Ran 44 tests
-OK (skipped=1: openclaw source not present on this machine)
-CI: ubuntu-latest + windows-latest, Python 3.10 and 3.12
+Ran 44 tests: OK (skipped=1: openclaw source not present).
+CI matrix: ubuntu + windows, Python 3.10/3.12.
 
 ---- BENCHMARK (ground-truth corpus) ----
 files: 9   expected pairs: 15   found pairs: 15
-TP 15   FP 0   FN 0
-precision 1.000   recall 1.000   F1 1.000
-
----- DEMO (vulnerable app) ----
-vibe score 0/100   DANGER - do not ship
-findings: 16   exit code: 1
+TP 15   FP 0   FN 0   precision 1.000   recall 1.000
 
 ---- SELF-SCAN (dogfood) ----
-vibe score 100/100   findings: 2 (info only: file-too-long, long-function)
+vibe score 100/100; findings: 2 info (file-too-long, long-function)
 
----- REAL-WORLD SPOT CHECK (informational, not a benchmark) ----
-pallets/click (179 files):     45 findings -> score 84, OK
-  (16 low except-pass, 2 medium pickle in tests/helpers, 27 info-level)
-python-dotenv (48 files):       1 finding  -> score 100, CLEAN
-  (1 info: file-too-long)
-
----- CLAWHUB SECURITY AUDIT ----
-Outcome: Pass
-A.I.G: 0 findings (clean)
-SkillSpector: 0 issues (benign, high confidence)
-Coverage: 7/7 components
-Residual note: .env scanning and disabled-TLS detection are expected for a
-security scanner; recommendation stays CAUTION (not DO_NOT_INSTALL).
-
----- RELEASE NOTES ----
-v1.0.0  AST hardening (aliases, const propagation, unsafe YAML loaders,
-        os.system), .env secrets, severity caps, Windows-safe ignores
-v1.0.1  redact secrets in reports/SARIF/baselines; autofix confined to
-        scan root (no symlinks); YAML fix skips Loader= lines
-v1.0.2  declare autofix/baseline capabilities; remove executable-looking
-        doc snippets
-v1.0.3  all autofixes are behavior-changing -> require --fix-unsafe
-v1.0.4  redact autofix before/after previews; fix manifest frontmatter
-v1.0.5  remove unsupported permissions frontmatter
-v1.0.6  fix YAML colon in description; align CLI version
-v1.0.7  declare permissions as flow-style list (full manifest coverage)
-v1.0.8  UTF-8 stdout/stderr on Windows consoles (no crash on unicode
-        reports); tests/benchmark force UTF-8 subprocess pipes; ASCII
-        benchmark header; quiet contextlib.suppress in stdio setup
+---- DOCS (v1.0.9) ----
+- README.md is now the canonical English documentation
+- Vietnamese moved to README.vi.md
+- README.en.md removed (redundant)
+- pyproject readme points at README.md
+- Full 18-rule table, scoring caps, autofix tiers, redaction, privacy,
+  verification and limitations documented
