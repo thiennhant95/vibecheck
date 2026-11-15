@@ -14,6 +14,14 @@
 
 ## Cài đặt
 
+### ClawHub
+
+```bash
+clawhub install thiennhant95/vibecheck
+```
+
+### Từ source
+
 Không cần cài — chỉ cần Python 3.8+:
 
 ```bash
@@ -144,6 +152,12 @@ Autofix không sửa ngoài thư mục quét, bỏ qua symlink. Luôn review dif
 
 - `examples/github-action.yml` — upload SARIF cho GitHub code scanning
 - `examples/pre-commit-config.yaml` — pre-commit hook
+
+## Skill liên quan
+
+- **vibegit** — ước lượng tỷ lệ AI-assisted của repo từ git history (slop score, badge, CI gate): [ClawHub](https://clawhub.ai/thiennhant95/vibegit) · [GitHub](https://github.com/thiennhant95/vibegit)
+- **skill-firewall** — quét skill bên thứ ba trước khi cài: [ClawHub](https://clawhub.ai/thiennhant95/skill-firewall) · [GitHub](https://github.com/thiennhant95/agent-skills)
+- **undo-first** — guard hành động có thể rollback (snapshot, risk gate, restore): [ClawHub](https://clawhub.ai/thiennhant95/undo-first) · [GitHub](https://github.com/thiennhant95/agent-skills)
 
 ## License
 

@@ -5,9 +5,15 @@ allowed-tools: Read, Bash(python3:*)
 permissions: [file_read, file_write, env]
 ---
 
-# vibecheck v1.0.10
+# vibecheck v1.0.11
 
 Static security and quality audit for AI-generated code. Scores a codebase 0-100, reports findings with evidence, and stays useful in CI. Zero dependencies, Python 3.8+.
+
+## Install
+
+```bash
+clawhub install thiennhant95/vibecheck
+```
 
 ## When to use
 
@@ -72,6 +78,12 @@ Every current autofix changes behavior, so it requires the explicit `--fix-unsaf
 - Static analysis with one-hop alias/AST resolution; no cross-file data-flow.
 - Unquoted `KEY=value` secrets are checked only in `.env*` files; split secrets can evade.
 - Not a replacement for Semgrep, Bandit, or CodeQL; it is a fast pre-merge gate.
+
+## Related skills
+
+- `vibegit` — estimate AI-assisted work and slop signals from git history: `clawhub install thiennhant95/vibegit`
+- `skill-firewall` — scan third-party agent skills before installing them: `clawhub install thiennhant95/skill-firewall`
+- `undo-first` — reversible-action guard with snapshots, risk gate, and verified restore: `clawhub install thiennhant95/undo-first`
 
 Source, tests, and benchmark: https://github.com/thiennhant95/vibecheck
 

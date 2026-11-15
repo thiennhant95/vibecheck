@@ -1,8 +1,8 @@
 ========================================================================
- vibecheck EVIDENCE LOG (v1.0.9 - English README)
+ vibecheck EVIDENCE LOG (v1.0.11 - ClawHub install + related skills)
 ========================================================================
-timestamp : 2026-11-15T02:04:16Z
-tool sha256: 9dabda7c79c36ada785e5ace476b883e77546257872a4bc8fa67adf74bcf1d07
+timestamp : 2026-11-15T06:10:35Z
+tool sha256: 8fe3ec0bbc7cada8e118b35bd48a3652921052ffc93d8a6af6d773ee2a2b0a40
 clawhub   : thiennhant95/vibecheck
 
 ---- TEST SUITE (44 tests) ----
@@ -16,10 +16,8 @@ TP 15   FP 0   FN 0   precision 1.000   recall 1.000
 ---- SELF-SCAN (dogfood) ----
 vibe score 100/100; findings: 2 info (file-too-long, long-function)
 
----- DOCS (v1.0.9) ----
-- README.md is now the canonical English documentation
-- Vietnamese moved to README.vi.md
-- README.en.md removed (redundant)
-- pyproject readme points at README.md
-- Full 18-rule table, scoring caps, autofix tiers, redaction, privacy,
-  verification and limitations documented
+---- DOCS ----
+- README.md: canonical English documentation
+- README.vi.md: Vietnamese documentation
+- SKILL.md (v1.0.10): now English - usage, permissions/scope, scoring caps,
+  suppression, autofix caveats, reporting guidance, privacy, limits

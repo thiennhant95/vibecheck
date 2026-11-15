@@ -14,6 +14,14 @@
 
 ## Install
 
+### ClawHub
+
+```bash
+clawhub install thiennhant95/vibecheck
+```
+
+### From source
+
 Nothing to install — only Python 3.8+:
 
 ```bash
@@ -152,6 +160,12 @@ Autofix never edits outside the scanned root and skips symlinks. Always review t
 
 - `examples/github-action.yml` — SARIF upload for GitHub code scanning
 - `examples/pre-commit-config.yaml` — pre-commit hook
+
+## Related skills
+
+- **vibegit** — estimate how much of a repository is AI-assisted (slop score, badge, CI gate): [ClawHub](https://clawhub.ai/thiennhant95/vibegit) · [GitHub](https://github.com/thiennhant95/vibegit)
+- **skill-firewall** — scan third-party agent skills before installing them: [ClawHub](https://clawhub.ai/thiennhant95/skill-firewall) · [GitHub](https://github.com/thiennhant95/agent-skills)
+- **undo-first** — reversible-action guard with snapshots, risk gate, and verified restore: [ClawHub](https://clawhub.ai/thiennhant95/undo-first) · [GitHub](https://github.com/thiennhant95/agent-skills)
 
 ## License
 
